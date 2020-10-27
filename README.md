@@ -50,3 +50,5 @@ optimizer.pre_update_params()
 optimizer.update_layer(layer1)
 optimizer.update_layer(layer2)
 ```
+
+Inspired by https://nnfs.io/
