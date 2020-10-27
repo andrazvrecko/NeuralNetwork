@@ -1,6 +1,6 @@
 # NeuralNetwork
 
-Simple Neural network
+<b>Simple Neural network</b>
 
 
 
