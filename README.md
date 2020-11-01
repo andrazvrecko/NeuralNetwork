@@ -51,7 +51,7 @@ To enable L1&L2 regularization
 ```
 model.add(main.Layer_Dense(2, 512, weight_l2_lambda=5e-4, bias_l2_lambda=5e-4))
 ```
-To enable Dropout
+To enable Dropout add it after activation layer and in front of next dense layer
 ```
 ... Activation Layer
 model.add(main.Layer_Dropout(0.1))
