@@ -60,4 +60,5 @@ model.add(main.Layer_Dropout(0.1))
 
 
 Inspired by https://nnfs.io/. 
+
 This project helped me learn how Neural Networks work and math behind them.
