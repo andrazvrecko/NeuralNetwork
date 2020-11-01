@@ -1,4 +1,6 @@
 import numpy as np
+import cv2
+import os
 
 E = 2.71828182846
 
@@ -142,11 +144,31 @@ class Loss:
         sample_losses = self.forward(output, targets)
         # Calculate average distance for whole batch
         data_loss = np.mean(sample_losses)
+
+        # Add accumulated sum of losses and sample count
+        self.accumulated_sum += np.sum(sample_losses)
+        self.accumulated_count += len(sample_losses)
+
         if not include_regularization:
             return data_loss
         return data_loss, self.regularize_loss()
+
+    def calculate_accumulated(self, *, include_regularization=False):
+        # Calculate mean loss
+        data_loss = self.accumulated_sum / self.accumulated_count
+        # If just data loss - return it
+        if not include_regularization:
+            return data_loss
+        # Return the data and regularization losses
+        return data_loss, self.regularize_loss()
+
+    def reset_accumulated(self):
+        self.accumulated_sum = 0
+        self.accumulated_count = 0
+
     def remember_trainable_layers(self, trainable_layers):
         self.trainable_layers = trainable_layers
+
     def regularize_loss(self):
         regularization_loss = 0
         for layer in self.trainable_layers:
@@ -349,8 +371,19 @@ class Adam_Optimizer:
 class Accuracy:
     def calculate(self, values, targets):
         comparisons = self.compare(values, targets)
+        self.accumulated_sum += np.sum(comparisons)
+        self.accumulated_count += len(comparisons)
         accuracy = np.mean(comparisons)
         return accuracy
+
+    def calculate_accumulated(self):
+        # Calculate an accuracy
+        accuracy = self.accumulated_sum / self.accumulated_count
+        return accuracy
+
+    def reset_accumulated(self):
+        self.accumulated_sum = 0
+        self.accumulated_count = 0
 
 class Accuracy_Regression(Accuracy):
     def __init__(self):
@@ -383,42 +416,91 @@ class Model:
         self.optimizer = optimizer
         self.accuracy = accuracy
 
-    def train(self, X, y, *, epochs=1, print_every=1, validation_data=None):
+    def train(self, X, y, *, batch_size=None ,epochs=1, print_every=1, validation_data=None):
+        steps = 1
         self.accuracy.init(y)
-        for epoch in range(1, epochs + 1):
-            output = self.forward(X, training=True)
-
-            dataloss, regularization_loss = self.loss.calculate(output, y, include_regularization=True)
-            loss = dataloss + regularization_loss
-            predictions = self.output_activation.predictions(output)
-            accuracy = self.accuracy.calculate(predictions, y)
-
-            self.backward(output, y)
-            self.optimizer.update_params()
-            for layer in self.trainable_layers:
-                self.optimizer.update_layer(layer)
-            self.optimizer.update_iteration()
-
-            if not epoch % print_every:
-                print(f'epoch: {epoch}, ' +
-                      f'acc: {accuracy:.3f}, ' +
-                      f'loss: {loss:.3f} (' +
-                      f'data_loss: {dataloss:.3f}, ' +
-                      f'reg_loss: {regularization_loss:.3f}), ' +
-                      f'lr: {self.optimizer.current_learning_rate}')
-
         if validation_data is not None:
-            self.validateModel(validation_data=validation_data)
+            validation_steps = 1
+            X_val, y_val = validation_data
 
-    def validateModel(self,*, validation_data):
-        X, y = validation_data
-        output = self.forward(X, training=False)
-        loss = self.loss.calculate(output, y)
-        predictions = self.output_activation.predictions(output)
-        accuracy = self.accuracy.calculate(predictions, y)
-        print(f'validation, ' +
-              f'acc: {accuracy:.3f}, ' +
-              f'loss: {loss:.3f}')
+
+        if batch_size is not None:
+            steps = len(X) //batch_size
+            if steps * batch_size < X.shape[0]:
+                steps += 1
+            if validation_data is not None:
+                validation_steps = len(X_val) // batch_size
+                if validation_steps * batch_size < len(X_val):
+                    validation_steps += 1
+
+        self.loss.reset_accumulated()
+        self.accuracy.reset_accumulated()
+
+        for epoch in range(1, epochs + 1):
+            print(f'epoch: {epoch}')
+            self.loss.reset_accumulated()
+            self.accuracy.reset_accumulated()
+
+            for step in range(steps):
+                if batch_size is None:
+                    batch_X = X
+                    batch_y = y
+                else:
+                    batch_X = X[step * batch_size:(step + 1) * batch_size]
+                    batch_y = y[step * batch_size:(step + 1) * batch_size]
+
+                output = self.forward(batch_X, training=True)
+
+                dataloss, regularization_loss = self.loss.calculate(output, batch_y, include_regularization=True)
+                loss = dataloss + regularization_loss
+                predictions = self.output_activation.predictions(output)
+                accuracy = self.accuracy.calculate(predictions, batch_y)
+
+                self.backward(output, batch_y)
+                self.optimizer.update_params()
+                for layer in self.trainable_layers:
+                    self.optimizer.update_layer(layer)
+                self.optimizer.update_iteration()
+
+                if not step % print_every or step == steps - 1:
+                    print(f'step: {step}, ' +
+                          f'acc: {accuracy:.3f}, ' +
+                          f'loss: {loss:.3f} (' +
+                          f'data_loss: {dataloss:.3f}, ' +
+                          f'reg_loss: {regularization_loss:.3f}), ' +
+                          f'lr: {self.optimizer.current_learning_rate}')
+
+            epoch_data_loss, epoch_regularization_loss = self.loss.calculate_accumulated(include_regularization=True)
+            epoch_loss = epoch_data_loss + epoch_regularization_loss
+            epoch_accuracy = self.accuracy.calculate_accumulated()
+
+            print(f'training, ' +
+                   f'acc: {epoch_accuracy:.3f}, ' +
+                   f'loss: {epoch_loss:.3f} (' +
+                   f'data_loss: {epoch_data_loss:.3f}, ' +
+                   f'reg_loss: {epoch_regularization_loss:.3f}), ' +
+                   f'lr: {self.optimizer.current_learning_rate}')
+
+            if validation_data is not None:
+                self.loss.reset_accumulated()
+                self.accuracy.reset_accumulated()
+
+                for step in range(validation_steps):
+                    if batch_size is None:
+                        batch_X = X_val
+                        batch_y = y_val
+                    else:
+                        batch_X = X_val[ step * batch_size:(step + 1) * batch_size]
+                        batch_y = y_val[ step * batch_size:(step + 1) * batch_size]
+                    output = self.forward(batch_X, training=False)
+                    self.loss.calculate(output, batch_y)
+                    predictions = self.output_activation.predictions(output)
+                    self.accuracy.calculate(predictions, batch_y)
+                validation_loss = self.loss.calculate_accumulated()
+                validation_accuracy = self.accuracy.calculate_accumulated()
+                print(f'validation, ' +
+                      f'acc: {validation_accuracy:.3f}, ' +
+                      f'loss: {validation_loss:.3f}')
 
     # Create references for prev and next layer. Used for forward/backward
     def connectLayers(self):
@@ -461,3 +543,39 @@ class Model:
         self.loss.backward(values, targets)
         for layer in reversed(self.layers):
             layer.backward(layer.next.dinputs)
+
+class Data:
+    def load_mnist_dataset(self, dataset, path):
+        labels = os.listdir(os.path.join(path, dataset))
+        X = []
+        y = []
+
+        for label in labels:
+            for file in os.listdir(os.path.join(path, dataset, label)):
+                image = cv2.imread(os.path.join(
+                    path, dataset, label, file
+                ), cv2.IMREAD_UNCHANGED)
+
+                X.append(image)
+                y.append(label)
+
+        # Convert the data to proper numpy arrays and return
+        return np.array(X), np.array(y).astype('uint8')
+    def create_data_mnist(self, path):
+        X, y = self.load_mnist_dataset('train', path)
+        X_test, y_test = self.load_mnist_dataset('test', path)
+
+        # And return all the data
+        return X, y, X_test, y_test
+    def scale_data_mnist(self, X,):
+        X = (X.astype(np.float32) - 127.5) / 127.5
+        return X
+    def flatten_data(self, X):
+        X = X.reshape(X.shape[0], -1)
+        return X
+    def reshuffle_data(self, X, y):
+        keys = np.array(range(X.shape[0]))
+        np.random.shuffle(keys)
+        X = X[keys]
+        y = y[keys]
+        return X,y
