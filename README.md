@@ -2,53 +2,59 @@
 
 <b>Simple Neural network</b>
 
+Neural network supports Classification and Regression.
 
 
-Activation functions: ReLU, Softmax
 
-Loss function: Cross Entropy
-
-Optimizer: SGD (vanilla or using momentum)
+Activation functions: ReLU, Softmax, Sigmoid (Regression), Linear (Regression)
+Loss function: Cross Entropy, Binary Cross Entropy, Mean Squared Loss (Regression), Mean Absolute Loss (Regression)
+Optimizer: SGD (vanilla or using momentum), Adam
+Regulizers: L1&L2, dropout
 
 
 
 Use:
 
 ```
-# Create layer with 2 inputs and 64 neurons
-layer1 = Layer_Dense(2,64)
-# Create layer with 64 inputs and 3 neurons
-layer2 = Layer_Dense(64,3)
+# Create Model
+model = main.Model()
 
-# Rectified linear unit activation function
-activation1 = AReLU()
+# Add layers to the model
+model.add(main.Layer_Dense(2, 512))
+model.add(main.Activation_ReLU())
+model.add(main.Layer_Dense(512, 3))
+model.add(main.Activation_Softmax())
 
-# Class using Softmax activation function and cross entropy loss calculation
-loss_activation = Softmax_CrossEntropy()
-# SGD optimizer (learn_rate=1., decay=0., momentum=0.)
-optimizer = SGD_Optimizer(decay=0.001)
+# Set Loss function, Optimizer and Accuracy class (Accuracy_Regression for regression)
+model.set(
+    loss=main.Cross_Entropy(),
+    optimizer=main.Adam_Optimizer(),
+    accuracy=main.Accuracy_Classification()
+)
 
-# Pass data through first layer
-layer1.forward(X)
-# Pass output from first layer through ReLU
-activation1.forward(layer1.output)
-# Pass that through second layer
-layer2.forward(activation1.output)
+# Prepare model for training
+model.connectLayers()
 
-# Pass output from second layer through Softmax activation function and calculate loss based on array of correct values
-loss = loss_activation.forward(layer2.output, y)
-
-# Generate gradient for every layer and activation function
-loss_activation.backward(loss_activation.output, y)
-layer2.backward(loss_activation.dinputs)
-activation1.backward(layer2.dinputs)
-layer1.backward(activation1.dinputs)
-
-# change learning_rate if using learning_rate decay
-optimizer.pre_update_params()
-# Optimize weights and biases based on gradient
-optimizer.update_layer(layer1)
-optimizer.update_layer(layer2)
+# Train model
+# X = data, y = actual results, print_every = Print Accuracy, Loss, ... every z epochs
+model.train(X, y, epochs=10000, print_every=100)
 ```
 
+
+Change learning rate and decay in Optimizer
+```
+optimizer=main.Adam_Optimizer(learning_rate=0.05, decay=5e-5)
+```
+
+
+To enable L1&L2 regularization
+```
+model.add(main.Layer_Dense(2, 512, weight_l2_lambda=5e-4, bias_l2_lambda=5e-4))
+```
+To enable Dropout
+```
+... Activation Layer
+model.add(main.Layer_Dropout(0.1))
+... Next Dense Layer
+```
 Inspired by https://nnfs.io/
