@@ -1,4 +1,4 @@
-# NeuralNetwork
+# Neural Network
 
 <b>Simple Neural network</b>
 
@@ -57,4 +57,7 @@ To enable Dropout add it after activation layer and in front of next dense layer
 model.add(main.Layer_Dropout(0.1))
 ... Next Dense Layer
 ```
-Inspired by https://nnfs.io/
+
+
+Inspired by https://nnfs.io/. 
+This project helped me learn how Neural Networks work and math behind them.
