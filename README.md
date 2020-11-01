@@ -2,9 +2,6 @@
 
 <b>Simple Neural network</b>
 
-Neural network supports Classification and Regression.
-
-
 
 Activation functions: ReLU, Softmax, Sigmoid (Regression), Linear (Regression)
 
