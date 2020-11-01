@@ -1,4 +1,4 @@
-# Neural Network
+# Neural Network Lib
 
 <b>Simple Neural network</b>
 
