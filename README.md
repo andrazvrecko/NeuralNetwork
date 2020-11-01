@@ -7,8 +7,11 @@ Neural network supports Classification and Regression.
 
 
 Activation functions: ReLU, Softmax, Sigmoid (Regression), Linear (Regression)
+
 Loss function: Cross Entropy, Binary Cross Entropy, Mean Squared Loss (Regression), Mean Absolute Loss (Regression)
+
 Optimizer: SGD (vanilla or using momentum), Adam
+
 Regulizers: L1&L2, dropout
 
 
