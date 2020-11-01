@@ -5,11 +5,16 @@ E = 2.71828182846
 
 # Simple Layer; Size of a single input (Num of neurons from previous layer), Number of neurons you want to use;
 class Layer_Dense:
-    def __init__(self, input_size, num_neurons):
+    def __init__(self, input_size, num_neurons, weight_l1_lambda=0, weight_l2_lambda=0, bias_l1_lambda=0, bias_l2_lambda=0):
         # Random weights for every connection
         self.weights = 0.01 * np.random.randn(input_size, num_neurons)
         # Array of 0s
         self.biases = np.zeros((1, num_neurons))
+        # L1 L2 Reqularization
+        self.weight_l1 = weight_l1_lambda
+        self.weight_l2 = weight_l2_lambda
+        self.bias_l1 = bias_l1_lambda
+        self.bias_l2 = bias_l2_lambda
     def forward(self, inputs):
         #remember inputs
         self.inputs = inputs
@@ -17,8 +22,8 @@ class Layer_Dense:
         # Output = [num_inputs][num_neurons] !!! num_inputs = batch size
         self.output = np.dot(inputs, self.weights) + self.biases
     def backward(self, values):
-        # Values = values from ReLU backward
-        # Gradients on weights, bias and inputs using chain rule
+        # Values = derivatives from ReLU or Softmax
+
         # For more than 1 Neuron sum of Gradients is needed, hence np.dot/np.sum
         # single weight: dW0 = x[0] * dReLU
         self.dweights = np.dot(self.inputs.T, values)
@@ -26,6 +31,22 @@ class Layer_Dense:
         self.dbiases = np.sum(values, axis=0, keepdims=True)
         # single input: dX0 = w[0] * dReLU
         self.dinputs = np.dot(values, self.weights.T)
+
+        # L1 L2
+        # Derivative of L1
+        if self.weight_l1 > 0:
+            dL1 = np.ones_like(self.weights)
+            dL1[self.weights < 0] = -1
+            self.dweights += self.weight_l1 * dL1
+        # Derivative of L2
+        if self.weight_l2 > 0:
+            self.dweights += 2 * self.weight_l2 * self.weights
+        if self.bias_l1 > 0:
+            dL1 = np.ones_like(self.biases)
+            dL1[self.biases < 0] = -1
+            self.dbiases += self.bias_l1 * dL1
+        if self.bias_l2 > 0:
+            self.dbiases += 2 * self.bias_l2 * self.biases
 
 
 # Activation function 0 or X
@@ -72,6 +93,20 @@ class Loss:
         # Calculate average distance for whole batch
         data_loss = np.mean(sample_losses)
         return data_loss
+    def reqularize_loss(self, layer):
+        regularization_loss = 0
+        if layer.weight_l1 > 0:
+            regularization_loss += layer.weight_l1* np.sum(np.abs(layer.weights))
+
+        if layer.bias_l1 > 0:
+            regularization_loss += layer.bias_l1* np.sum(np.abs(layer.biases))
+
+        if layer.weight_l2 > 0:
+            regularization_loss += layer.weight_l2* np.sum(layer.weights * layer.weights)
+
+        if layer.bias_l2 > 0:
+            regularization_loss += layer.bias_l2* np.sum(layer.biases * layer.biases)
+        return regularization_loss
 
 class Cross_Entropy(Loss):
     # Calculate N values for N batch size; distance between Selected element and Wanted element
@@ -98,6 +133,21 @@ class Cross_Entropy(Loss):
         self.dinputs = -targets / values
         self.dinputs = self.dinputs / lenOfBatch
 
+# Every output is binary (example: human or not human,...)
+class Binary_Cross_Entropy(Loss):
+    def forward(self, inputs, targets):
+        inputs_clipped = np.clip(inputs, 1e-7, 1 - 1e-7)
+        losses = -(targets * np.log(inputs_clipped) + (1 - targets) * np.log(1 - inputs_clipped))
+        losses = np.mean(losses, axis=-1)
+        return losses
+    def backward(self, values, targets):
+        lenOfBatch = len(values)
+        lenOfValues = len(values[0])
+        clipped_values = np.clip(values, 1e-7, 1 - 1e-7)
+
+        self.dinputs = -(targets / clipped_values - (1 - targets) / (1 - clipped_values)) / lenOfValues
+        # Normalize gradient
+        self.dinputs = self.dinputs / lenOfBatch
 
 # Softmax + CrossEntropy
 class Softmax_CrossEntropy():
@@ -122,11 +172,25 @@ class Softmax_CrossEntropy():
             targets = np.argmax(targets, axis=1)
         # Copy so we can safely modify
         self.dinputs = values.copy()
-        # Calculate gradient
+        # Calculate gradient; value - 1 where correct answer lies.
         self.dinputs[range(samples), targets] -= 1
         # Normalize gradient
         self.dinputs = self.dinputs / samples
 
+    def reqularize_loss(self, layer):
+        regularization_loss = 0
+        if layer.weight_l1 > 0:
+            regularization_loss += layer.weight_l1* np.sum(np.abs(layer.weights))
+
+        if layer.bias_l1 > 0:
+            regularization_loss += layer.bias_l1* np.sum(np.abs(layer.biases))
+
+        if layer.weight_l2 > 0:
+            regularization_loss += layer.weight_l2* np.sum(layer.weights * layer.weights)
+
+        if layer.bias_l2 > 0:
+            regularization_loss += layer.bias_l2* np.sum(layer.biases * layer.biases)
+        return regularization_loss
 
 # TODO AdaGrad, RMSProp
 class SGD_Optimizer:
@@ -148,7 +212,7 @@ class SGD_Optimizer:
             if not hasattr(layer, 'weight_momentums'):
                 layer.weight_momentums = np.zeros_like(layer.weights)
                 layer.bias_momentums = np.zeros_like(layer.biases)
-            # calculate updates from previous values
+            # calculate updates from previous values; momentum ~ moving average from previous steps (1/2 step-1 + 1/4 step - 2 + 1/8 step - 3 + ....)
             weight_updates = self.momentum * layer.weight_momentums - self.current_learning_rate * layer.dweights
             bias_updates = self.momentum * layer.bias_momentums - self.current_learning_rate * layer.dbiases
             # set new values
@@ -187,26 +251,48 @@ class Adam_Optimizer:
             layer.bias_momentums = np.zeros_like(layer.biases)
             layer.bias_cache = np.zeros_like(layer.biases)
         # update momentum with current gradients
+        # Adaptive gradient
         layer.weight_momentums = self.beta_1 * layer.weight_momentums + (1 - self.beta_1) * layer.dweights
         layer.bias_momentums = self.beta_1 * layer.bias_momentums + (1 - self.beta_1) * layer.dbiases
 
-        weight_momentums_corrected = layer.weight_momentums / (1 - self.beta_1 ** (self.iterations + 1))
-        bias_momentums_corrected = layer.bias_momentums / (1 - self.beta_1 ** (self.iterations + 1))
-
-        # Update cache with squared current gradients
+        # Update cache with squared current gradients, momentum for second order derivative
+        # RMSProp
         layer.weight_cache = self.beta_2 * layer.weight_cache + (1 - self.beta_2) * layer.dweights ** 2
         layer.bias_cache = self.beta_2 * layer.bias_cache + (1 - self.beta_2) * layer.dbiases ** 2
 
-        # Get corrected cache
-        weight_cache_corrected = layer.weight_cache / (1 - self.beta_2 ** (self.iterations + 1))
-        bias_cache_corrected = layer.bias_cache / (1 - self.beta_2 ** (self.iterations + 1))
+        # Bias adjustment
+        weight_momentums_adjusted = layer.weight_momentums / (1 - self.beta_1 ** (self.iterations + 1))
+        bias_momentums_adjusted = layer.bias_momentums / (1 - self.beta_1 ** (self.iterations + 1))
+
+        weight_cache_adjusted = layer.weight_cache / (1 - self.beta_2 ** (self.iterations + 1))
+        bias_cache_adjusted = layer.bias_cache / (1 - self.beta_2 ** (self.iterations + 1))
 
         # Vanilla SGD parameter update + normalization
         # with square rooted cache
-        layer.weights += -self.current_learning_rate * weight_momentums_corrected / (np.sqrt(weight_cache_corrected) + self.epsilon)
-        layer.biases += -self.current_learning_rate * bias_momentums_corrected / (np.sqrt(bias_cache_corrected) + self.epsilon)
+        layer.weights += -self.current_learning_rate * weight_momentums_adjusted / (np.sqrt(weight_cache_adjusted) + self.epsilon)
+        layer.biases += -self.current_learning_rate * bias_momentums_adjusted / (np.sqrt(bias_cache_adjusted) + self.epsilon)
 
     def update_iteration(self):
         self.iterations += 1
 
+# Dropout: rate - % of neurons you want to disable
+class Layer_Dropout:
+    def __init__(self, rate):
+        self.rate = 1 - rate
+    # Forward pass
+    def forward(self, inputs):
+        self.inputs = inputs
+        # Generate array of 1s and 0s
+        self.binary_mask = np.random.binomial(1, self.rate, size=inputs.shape) / self.rate
+        # Apply mask
+        self.output = inputs * self.binary_mask
+    # Backward pass
+    def backward(self, dvalues):
+        self.dinputs = dvalues * self.binary_mask
 
+class Sigmoid_Activation:
+    def forward(self, inputs):
+        self.inputs = inputs
+        self.output = 1 / (1 + np.exp(-inputs))
+    def backward(self, values):
+        self.dinputs = values * (1 - self.output) * self.output
