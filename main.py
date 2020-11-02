@@ -1,6 +1,8 @@
 import numpy as np
 import cv2
 import os
+import pickle
+import copy
 
 E = 2.71828182846
 
@@ -50,6 +52,11 @@ class Layer_Dense:
             self.dbiases += self.bias_l1 * dL1
         if self.bias_l2 > 0:
             self.dbiases += 2 * self.bias_l2 * self.biases
+    def get_parameters(self):
+        return self.weights, self.biases
+    def set_parameters(self, weights, biases):
+        self.weights = weights
+        self.biases = biases
 
 # Dropout: rate - % of neurons you want to disable
 class Layer_Dropout:
@@ -411,10 +418,13 @@ class Model:
         self.layers = []
     def add(self, layer):
         self.layers.append(layer)
-    def set(self, *, loss, optimizer, accuracy):
-        self.loss = loss
-        self.optimizer = optimizer
-        self.accuracy = accuracy
+    def set(self, *, loss=None, optimizer=None, accuracy=None):
+        if loss is not None:
+            self.loss = loss
+        if optimizer is not None:
+            self.optimizer = optimizer
+        if accuracy is not None:
+            self.accuracy = accuracy
 
     def train(self, X, y, *, batch_size=None ,epochs=1, print_every=1, validation_data=None):
         steps = 1
@@ -504,6 +514,7 @@ class Model:
 
     # Create references for prev and next layer. Used for forward/backward
     def connectLayers(self):
+
         self.input_layer = Layer_Input()
         count = len(self.layers)
         self.trainable_layers = []
@@ -521,7 +532,10 @@ class Model:
                 self.output_activation = self.layers[i]
             if hasattr(self.layers[i], 'weights'):
                 self.trainable_layers.append(self.layers[i])
-        self.loss.remember_trainable_layers(self.trainable_layers)
+
+        if self.loss is not None:
+            self.loss.remember_trainable_layers(self.trainable_layers)
+
         if isinstance(self.layers[-1], Activation_Softmax) and isinstance(self.loss, Cross_Entropy):
             # Create an object of combined activation
             # and loss functions
@@ -543,6 +557,71 @@ class Model:
         self.loss.backward(values, targets)
         for layer in reversed(self.layers):
             layer.backward(layer.next.dinputs)
+
+    def evaluate(self, X_val, y_val, *, batch_size=None):
+        validation_steps = 1
+        if batch_size is not None:
+            validation_steps = len(X_val) // batch_size
+            if validation_steps * batch_size < len(X_val):
+                validation_steps += 1
+        self.loss.reset_accumulated()
+        self.accuracy.reset_accumulated()
+        for step in range(validation_steps):
+            if batch_size is None:
+                batch_X = X_val
+                batch_y = y_val
+            else:
+                batch_X = X_val[step * batch_size:(step + 1) * batch_size]
+                batch_y = y_val[step * batch_size:(step + 1) * batch_size]
+
+            output = self.forward(batch_X, training=False)
+
+            self.loss.calculate(output, batch_y)
+
+            predictions = self.output_activation.predictions(
+                output)
+            self.accuracy.calculate(predictions, batch_y)
+
+        validation_loss = self.loss.calculate_accumulated()
+        validation_accuracy = self.accuracy.calculate_accumulated()
+        print(f'validation, ' +
+              f'acc: {validation_accuracy:.3f}, ' +
+              f'loss: {validation_loss:.3f}')
+
+    def get_parameters(self):
+        params=[]
+        for layer in self.trainable_layers:
+            params.append(layer.get_parameters())
+        return params
+
+    def set_parameters(self, params):
+        for param_layer, layer in zip(params, self.trainable_layers):
+            layer.set_parameters(*param_layer)
+
+    def save_parameters(self, path):
+        with open(path, 'wb') as f:
+            pickle.dump(self.get_parameters(), f)
+    def load_parameters(self, path):
+        with open(path, 'rb') as f:
+            self.set_parameters(pickle.load(f))
+    def save(self, path):
+        model = copy.deepcopy(self)
+        model.loss.reset_accumulated()
+        model.accuracy.reset_accumulated()
+        # Remove properties
+        model.input_layer.__dict__.pop('output', None)
+        model.loss.__dict__.pop('dinputs', None)
+        for layer in model.layers:
+            for property in ['inputs', 'output', 'dinputs', 'dweights', 'dbiases']:
+                layer.__dict__.pop(property, None)
+
+        with open(path, 'wb') as f:
+            pickle.dump(model, f)
+    @staticmethod
+    def load(path):
+        with open(path, 'rb') as f:
+            model = pickle.load(f)
+        return model
 
 class Data:
     def load_mnist_dataset(self, dataset, path):
