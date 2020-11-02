@@ -588,6 +588,23 @@ class Model:
               f'acc: {validation_accuracy:.3f}, ' +
               f'loss: {validation_loss:.3f}')
 
+    def predict(self, X, *, batch_size=None):
+        prediction_steps = 1
+        output = []
+        if batch_size is not None:
+            prediction_steps = len(X) // batch_size
+            if prediction_steps * batch_size < len(X):
+                prediction_steps += 1
+        for step in range(prediction_steps):
+            if batch_size is None:
+                batch_X = X
+            else:
+                batch_X = X[step * batch_size:(step + 1) * batch_size]
+            batch_output = self.forward(batch_X, training=False)
+            output.append(batch_output)
+            output = np.vstack(output)
+            return output
+
     def get_parameters(self):
         params=[]
         for layer in self.trainable_layers:
