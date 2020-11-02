@@ -59,6 +59,31 @@ model.add(main.Layer_Dropout(0.1))
 ```
 
 
+To save/load model
+```
+
+# Whole Model
+
+model.save('path')
+# Call after model.connectLayers()
+model = main.Model.load('path')
+
+# Weights and Biases
+
+model.save_parameters('path')
+# Call after model.connectLayers()
+model.load_parameters('path')
+```
+
+To predict
+```
+# Use parameter batch_size for custom sized batches
+res = model.predict(X)
+# Convert into human readable results based on Final Activation Function
+prediction = model.output_activation.predictions(res)
+print(prediction)
+```
+
 Inspired by https://nnfs.io/. 
 
 This project helped me learn how Neural Networks work and math behind them.
