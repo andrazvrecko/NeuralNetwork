@@ -1,6 +1,6 @@
-# Neural Network Lib
+# Neural Network Framework
 
-<b>Simple Neural network</b>
+<b>This project helped me learn and understand how Neural Networks work. Inspired by https://nnfs.io/ and other online resources.</b>
 
 
 Activation functions: ReLU, Softmax, Sigmoid (Regression), Linear (Regression)
@@ -84,6 +84,5 @@ prediction = model.output_activation.predictions(res)
 print(prediction)
 ```
 
-Inspired by https://nnfs.io/. 
 
-This project helped me learn how Neural Networks work and math behind them.
+
